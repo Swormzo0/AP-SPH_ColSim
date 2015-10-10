@@ -1,0 +1,6 @@
+# depslib dependency file v1.0
+1444272861 source:/home/sherman/Files/High School Curricular/Grade 12/AP Physics/Labs/1A. Collision Simulation/AP_SPH_CollisionSim/main.cpp
+	<iostream>
+	<stdio.h>
+	<cmath>
+
