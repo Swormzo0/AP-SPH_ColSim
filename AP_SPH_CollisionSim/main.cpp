@@ -7,19 +7,22 @@
 // Program controls
 #define USER_MASS
 #define DEBUG
+//#define DEBUG_POSN
 //#define CUBIC_F
 
 using namespace std;
 
 // Configuration
 const bool isStressBall = false; // Whether to use mass and radius of stress ball
-const double dt = 0.0000001; // Timestep
+double dt = 0.0000001; // Timestep
 const double stopDist = 0.0001; // Stop when the balls are this far from each other
 const double timeOut = 21;
+const double minTSPerc = .001; // Largest percetnage of radius length permitted for first timestep
+                               // displacement from equilibrium
 
 // Debug config
 bool debugBall = 0; // Debug ball A
-const double updateTableTS = 0.000001; // When time is a multiple of this, display debug table row
+const unsigned int updateTableT = 100; // Period for table updates
 
 // Constants
 const double M = .25, R = 3.5, TWO_R = R * 2; // Default mass and radius of ball
@@ -44,6 +47,7 @@ double norm(double (&a)[2])
 }
 
 
+/*// Copy the sign of one variable to another
 double signCopy(double orig, double dest)
 {
     if(orig < 0)
@@ -51,8 +55,7 @@ double signCopy(double orig, double dest)
     if(orig == 0)
         return 0;
     return dest;
-}
-
+}*/
 
 
 // A stress ball class
@@ -124,7 +127,7 @@ class BSystem
     double dist, t=0, vi[2][2];
     bool hasEverCollided = false;
     #ifdef DEBUG
-    unsigned int iterNum = 1;
+    unsigned int iterNum = 0;
     #endif // DEBUG
 
 
@@ -154,12 +157,20 @@ class BSystem
         // Calculate distance from equilibrium
         else
             for(int i=0; i < 2; i++)
-                xA[i] = .5 * ds[i] - signCopy(ds[i], R);
+                xA[i] = ds[i] * (-.5 + R / dist);
 
-        #ifdef DEBUG
-        // If time to update, display the displacement from equilibrium wrt ball 1
-        if(fmod(t, updateTableTS) == 0)
-            printf("\t%.15f\t%.15f", xA[X], xA[Y]);
+        #if defined(DEBUG) && defined(DEBUG_POSN)
+
+        // Calculate x using Igi's formula
+        double x = R - .5 * dist;
+        // If time to update
+        if(iterNum % updateTableT == 0)
+        {
+            // Display the displacement from equilibrium wrt ball 1
+            printf("\t%.5f\t%.5f", xA[X], xA[Y]);
+            // Display difference in magnitudes of x
+            printf("\t%.5f", x-norm(xA));
+        }
         #endif // DEBUG
     }
 
@@ -167,13 +178,21 @@ class BSystem
     // Calculate the force for a given distance from equilibrium
     void ballForce(double (&x)[2], double (&F)[2])
     {
+        double newX;
+
         for(int i=0; i < 2; i++)
-            // Negate force as it opposes direction of displacement
+        {
+            // The regressed force requires a negative x
+            newX = -abs(x[i]);
+
+            // Negate force as to oppose direction of displacement
 #ifdef CUBIC_F
-            F[i] = -x[i] * (x[i]*(F_CUBIC[0]*x[i]+F_CUBIC[1])+F_CUBIC[2]);
+            F[i] = -x[i] * (newX*(F_CUBIC[0]*newX+F_CUBIC[1])+F_CUBIC[2]);
 #else
-            F[i] = -x[i]*(F_QUAD[0]*x[i]+F_QUAD[1]);
+            F[i] = -x[i] * (F_QUAD[0]*newX+F_QUAD[1]);
 #endif
+        }
+
     }
 
 
@@ -199,7 +218,7 @@ class BSystem
         // Debug stuff
         #ifdef DEBUG
         // If time to update, display next row of debug table
-        if(fmod(t, updateTableTS) == 0)
+        if(iterNum % updateTableT == 0)
         {
             printf("%d\t%.3f", iterNum, t);
             printf("\t%.3f\t%.3f", b[debugBall].s[X], b[debugBall].s[Y]);
@@ -219,7 +238,7 @@ class BSystem
         // Debug table
         #ifdef DEBUG
         // End row for debug table when needed
-        if(fmod(t, updateTableTS) == 0)
+        if(iterNum % updateTableT == 0)
             printf("\n");
         // Increment iteration number
         iterNum++;
@@ -239,6 +258,23 @@ class BSystem
     }
 
 
+    // Helper function for displaying velocities at the end
+    void getDisplayVelocities(double (&a)[2][2][2])
+    {
+        // Get initial velocities
+        for(int i=0; i < 2; i++)
+            for(int j=0; j < 2; j++)
+                a[0][i][j] = vi[i][j];
+
+        // Get final velocities
+        for(int i=0; i < 2; i++)
+        {
+            a[1][A][i] = b[A].v[i];
+            a[1][B][i] = b[B].v[i];
+        }
+    }
+
+
 public:
     // Debug functions
     void debug()
@@ -252,9 +288,16 @@ public:
     {
         #ifdef DEBUG
         // Display table debug header for the ball to debug
-        printf("b%c\tt\tsx\tsy\tvx\tvy\tax\tay\tFx\tFy\txAx\txAy\n", debugBall? 'B': 'A');
-        printf("--------------------------------------------------------------------------------\n");
+        printf("b%c\tt\tsx\tsy\tvx\tvy\tax\tay\tFx\tFy", debugBall? 'B': 'A');
+        #ifdef DEBUG_POSN
+        printf("\txAx\txAy\txCheck");
+        #endif // DEBUG_POSN
+        printf("\n--------------------------------------------------------------------------------\n");
         #endif // DEBUG
+
+        // Adjust dt if it seems too high
+        double minTSX = R * minTSPerc;
+        dt = fmin(fmin(dt, minTSX/norm(b[A].v)), minTSX/norm(b[B].v));
 
         do
         {
@@ -269,18 +312,30 @@ public:
     // Display the variables
     void print()
     {
+        char state[] = {'i', 'f'};
+        double dispV[2][2][2];
+        double vx, vy, normV, theta;
+
+        // Display whether the balls collided or if the simulation timed out
         if(!hasEverCollided)
             printf("The balls did not collide.\n\n");
         if(timeOut <= t)
             printf("Simulation timed out.\n\n");
 
         // Display table of velocity data
-        printf("\tx\ty\n");
-        printf("-----------------------\n");
-        printf("v1i\t%.4f\t%.4f\n", vi[A][X], vi[A][Y]);
-        printf("v2i\t%.4f\t%.4f\n", vi[B][X], vi[B][Y]);
-        printf("v1f\t%.4f\t%.4f\n", b[A].v[X], b[A].v[Y]);
-        printf("v2f\t%.4f\t%.4f\n", b[B].v[X], b[B].v[Y]);
+        printf("\tx\ty\tnorm\ttheta\n");
+        printf("--------------------------------------\n");
+        getDisplayVelocities(dispV);
+        for(int stateIndex = 0; stateIndex < 2; stateIndex++)
+            for(int ball=0; ball < 2; ball++)
+            {
+                vx = dispV[stateIndex][ball][X];
+                vy = dispV[stateIndex][ball][Y];
+                normV = norm(dispV[stateIndex][ball]);
+                theta = atan2(dispV[stateIndex][ball][Y], dispV[stateIndex][ball][X]) * 180 / PI;
+                printf("v%d%c\t%.4f\t%.4f\t%.4f\t%.2f\n", ball+1, state[stateIndex],
+                       vx, vy, normV, theta);
+            }
     }
 
 
