@@ -4,11 +4,28 @@
 //#include <iomanip>
 #include <cmath>
 
+// Program controls
+#define USER_MASS
+#define DEBUG
+//#define CUBIC_F
+
 using namespace std;
 
+// Configuration
+const bool isStressBall = false; // Whether to use mass and radius of stress ball
+const double dt = 0.0000001; // Timestep
+const double stopDist = 0.0001; // Stop when the balls are this far from each other
+const double timeOut = 21;
+
+// Debug config
+bool debugBall = 0; // Debug ball A
+const double updateTableTS = 0.000001; // When time is a multiple of this, display debug table row
+
 // Constants
-// Timestep
-const double dt = 0.0001;
+const double M = .25, R = 3.5, TWO_R = R * 2; // Default mass and radius of ball
+const double PI = 3.14159265358979323846264338;
+const double F_CUBIC[] = {2534468.26698494, -20795.82059, 2127.93853}; // Coefficients of cubic equation
+const double F_QUAD[] = {48234.5591, 1699.472766}; //// Coefficients of quadratic equation
 
 // Convenience variables for coordianates
 const int X = 0;
@@ -18,10 +35,27 @@ const int Y = 1;
 const int A = 0;
 const int B = 1;
 
-// Global variables
-double M, R; // Mass and radius
-bool isStressBall = false; // Whether to use mass and radius of stress ball
 
+// Helper functions
+// Return the magnitude of a 2D vector
+double norm(double (&a)[2])
+{
+    return sqrt(a[0]*a[0]+a[1]*a[1]);
+}
+
+
+double signCopy(double orig, double dest)
+{
+    if(orig < 0)
+        return -dest;
+    if(orig == 0)
+        return 0;
+    return dest;
+}
+
+
+
+// A stress ball class
 class Ball
 {
 public:
@@ -29,10 +63,10 @@ public:
     double s[2], v[2], a[2];
     // Declare net force on ball
     double F[2];
-    // Individual mass and radius
-    double m, r;
+    // Individual mass
+    double m;
 
-// Update displacement, velocity and acceleration
+    // Update displacement, velocity and acceleration
     void updateKM()
     {
         // Update acceleration
@@ -47,78 +81,278 @@ public:
             v[i] = v[i] + a[i]*dt;
     }
 
-    // Constructor
-    Ball(double m, double r, double[] v, double[] s)
+    // Constructors
+    // Default Constructor
+    Ball()
+    {
+        // Set the mass to the default one and leave everything else at 0
+        m = M;
+        for(int i=0; i < 2; i++)
+        {
+            s[i] = 0;
+            v[i] = 0;
+            a[i] = 0;
+            F[i] = 0;
+        }
+    }
+
+    // Construct a ball in a given circumstance
+    Ball(double m, double (&v)[2], double (&s)[2])
     {
         // Set variables
         this->m = abs(m);
-        this->r = abs(r);
-        this->v = v;
-        this->s = s;
+        for(int i=0; i < 2; i++)
+        {
+            this->v[i] = v[i];
+            this->s[i] = s[i];
+        }
+
+        // Set other variables to zero
+        for(int i=0; i < 2; i++)
+        {
+            a[i] = 0;
+            F[i] = 0;
+        }
     }
 };
 
+
+// A class for the system of two balls
 class BSystem
 {
     Ball b[2];
+    double dist, t=0, vi[2][2];
+    bool hasEverCollided = false;
+    #ifdef DEBUG
+    unsigned int iterNum = 1;
+    #endif // DEBUG
 
-    bool displacement(double &xA[])
+
+    // Calculate displacement from equilibrium and update distance from each other with respect to the first ball
+    void displacement(double (&xA)[2])
     {
-        // Prematurely calculate displacement from equilibrium wrt ball 1
         double ds[2];
-        for(int i=0; i < 2; i++)
-            ds[i] = b[0].s[i] - b[0].s[1];
+        bool isInCollision;
 
-        if (sqrt(ds[0]^2+ds[1]^2) < 2*R)
+        // Calculate difference in position
+        for(int i=0; i < 2; i++)
+        {
+            ds[i] = b[0].s[i] - b[1].s[i];
+        }
+
+        // Calculate distance and see if the balls are in collision
+        dist = norm(ds);
+        isInCollision = dist < TWO_R;
+
+        // Update whether the ball has ever collided
+        hasEverCollided |= isInCollision;
+
+        // If there is no collision, displacement from equilibrium is 0
+        if (!isInCollision)
             xA[X] = xA[Y] = 0;
+        // Otherwise
+        // Calculate distance from equilibrium
         else
             for(int i=0; i < 2; i++)
-                xA[i] = .5 * ds[i] - abs(ds[i]) * R/ds[i];
+                xA[i] = .5 * ds[i] - signCopy(ds[i], R);
+
+        #ifdef DEBUG
+        // If time to update, display the displacement from equilibrium wrt ball 1
+        if(fmod(t, updateTableTS) == 0)
+            printf("\t%.15f\t%.15f", xA[X], xA[Y]);
+        #endif // DEBUG
     }
 
-    void ballForce(double x[], double &F[])
+
+    // Calculate the force for a given distance from equilibrium
+    void ballForce(double (&x)[2], double (&F)[2])
     {
         for(int i=0; i < 2; i++)
-            F[i] = x * (x* (2534468*x-20795.8)+2127.939)
+            // Negate force as it opposes direction of displacement
+#ifdef CUBIC_F
+            F[i] = -x[i] * (x[i]*(F_CUBIC[0]*x[i]+F_CUBIC[1])+F_CUBIC[2]);
+#else
+            F[i] = -x[i]*(F_QUAD[0]*x[i]+F_QUAD[1]);
+#endif
     }
 
-public:
-    void updateForce(Ball b)
-    {
 
+    // Update forces on balls for the time step
+    void updateForces()
+    {
+        // Calculate displacement from equilibrium for ball A
+        double xA[] = {0, 0};
+        displacement(xA);
+
+        // Update force on ball A
+        ballForce(xA, b[A].F);
+
+        // Equal and opposite force on ball B
+        for(int i=0; i < 2; i++)
+            b[B].F[i] = -b[A].F[i];
+    }
+
+
+    // Update the state and increment time step
+    void update()
+    {
+        // Debug stuff
+        #ifdef DEBUG
+        // If time to update, display next row of debug table
+        if(fmod(t, updateTableTS) == 0)
+        {
+            printf("%d\t%.3f", iterNum, t);
+            printf("\t%.3f\t%.3f", b[debugBall].s[X], b[debugBall].s[Y]);
+            printf("\t%.3f\t%.3f", b[debugBall].v[X], b[debugBall].v[Y]);
+            printf("\t%.3f\t%.3f", b[debugBall].a[X], b[debugBall].a[Y]);
+            printf("\t%.3f\t%.3f", b[debugBall].F[X], b[debugBall].F[Y]);
+        }
+        #endif // DEBUG
+
+        // Evaluate forces
+        updateForces();
+
+        // Calculate new a, v and s
+        for(int i=0; i < 2; i++)
+            b[i].updateKM();
+
+        // Debug table
+        #ifdef DEBUG
+        // End row for debug table when needed
+        if(fmod(t, updateTableTS) == 0)
+            printf("\n");
+        // Increment iteration number
+        iterNum++;
+        #endif // DEBUG
+
+        // Increment time step
+        t += dt;
+    }
+
+
+    // Return whether to continue simulation
+    bool getContinueState()
+    {
+        // Is there no (small) gap between the balls?
+        // Or was there a timeout?
+        return t < timeOut && (dist <= TWO_R + stopDist);
+    }
+
+
+public:
+    // Debug functions
+    void debug()
+    {
+        // Test
+    }
+
+
+    // Run simulation
+    void run()
+    {
+        #ifdef DEBUG
+        // Display table debug header for the ball to debug
+        printf("b%c\tt\tsx\tsy\tvx\tvy\tax\tay\tFx\tFy\txAx\txAy\n", debugBall? 'B': 'A');
+        printf("--------------------------------------------------------------------------------\n");
+        #endif // DEBUG
+
+        do
+        {
+            // Update the state for this time step
+            update();
+        }
+        // Run until the balls are moving away from each other or there is a timeout
+        while(getContinueState());
+    }
+
+
+    // Display the variables
+    void print()
+    {
+        if(!hasEverCollided)
+            printf("The balls did not collide.\n\n");
+        if(timeOut <= t)
+            printf("Simulation timed out.\n\n");
+
+        // Display table of velocity data
+        printf("\tx\ty\n");
+        printf("-----------------------\n");
+        printf("v1i\t%.4f\t%.4f\n", vi[A][X], vi[A][Y]);
+        printf("v2i\t%.4f\t%.4f\n", vi[B][X], vi[B][Y]);
+        printf("v1f\t%.4f\t%.4f\n", b[A].v[X], b[A].v[Y]);
+        printf("v2f\t%.4f\t%.4f\n", b[B].v[X], b[B].v[Y]);
+    }
+
+
+    // Default constructor
+    BSystem()
+    {
+        // Angle of first ball relative to second ball
+        // Must be in (-90, 90)in degrees
+        double theta;
+        double m[2], v[2][2], s[2][2];
+
+        #ifdef DEBUG
+        printf("Debug which ball? ");
+        scanf("%d", &debugBall);
+        #endif // DEBUG
+
+        // Prompt for variables
+        cout<<"Mass 1 in kg:";
+        cin>>m[A];
+        cout<<"Mass 2 in kg:";
+        cin>>m[B];
+
+        cout<<"Angle of ball 2 relative to ball 1 in degrees:"<<endl<<endl;
+        cin>>theta;
+        cout<<endl;
+
+        cout<<"Components of initial velocity of ball 1 in ms^-1:"<<endl<<endl;
+        for (int m=0; m<2; m++)
+        {
+            cin>>v[A][m];
+            cout<<endl;
+        }
+
+        cout<<"Components of initial velocity of ball 2 in ms^-1:"<<endl<<endl;
+        for (int m=0; m<2; m++)
+        {
+            cin>>v[B][m];
+            cout<<endl;
+        }
+
+        // Calculate positions
+        // Set ball 1 at the origin
+        // Set ball 2 where the balls are just touching at the desired angle from ball 1
+        theta *= PI / 180;
+        s[A][X] = 0;
+        s[B][X] = TWO_R*cos(theta);
+        s[A][Y] = 0;
+        s[B][Y] = TWO_R*sin(theta);
+
+        // Remember initial velocity
+        for(int i=0; i < 2; i++)
+            for(int j=0; j < 2; j++)
+                vi[i][j] = v[i][j];
+
+        // Create balls
+        for(int i=0; i < 2; i++)
+            b[i] = Ball(m[i], v[i], s[i]);
+
+// TODO (Sherman#1#): Make sure that dt is low enough
     }
 };
 
+
+// Run the simulation
 int main()
 {
-    double m1, m2;
-    // Angle of first ball relative to second ball
-    // Must be in (-90, 90)in degrees
-    double theta;
-    double v1[2];
-    double v2[2];
+    // Create a system of balls
+    BSystem colSys = BSystem();
 
-    // Prompt for variables
-    cout<<"Mass 1:";
-    cin>>m1;
-    cout<<"Mass 2:";
-    cin>>m2;
+    // Run the system
+    colSys.run();
 
-    cout<<"Co-ordinates of ball 2 relative to ball 1:"<<endl<<endl;
-    cin>>theta;
-    cout<<endl;
-
-    cout<<"Components of initial velocity of mass 1:"<<endl<<endl;
-    for (int m=0; m<2; m++)
-    {
-        cin>>v1[m];
-        cout<<endl;
-    }
-
-    cout<<"Components of initial velocity of mass 2:"<<endl<<endl;
-    for (int m=0; m<2; m++)
-    {
-        cin>>v2[m];
-        cout<<endl;
-    }
+    // Dump variables
+    colSys.print();
 }
