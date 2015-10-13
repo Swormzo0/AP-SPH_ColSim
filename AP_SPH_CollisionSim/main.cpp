@@ -16,11 +16,12 @@ double dt = 0.0000001; // Timestep
 const double stopDist = 0.0001; // Stop when the balls are this far from each other
 const double timeOut = 21; // How long before giving up on simulation
 const double minTSPerc = .001; // Largest percentage of radius length permitted for first timestep
+const double dispPrec = 15; // How many decimal places to show in debug table
 // displacement from equilibrium
 
 // Debug config
 bool debugBall = 0; // Debug ball A
-const unsigned int updateTableT = 100; // Period for table updates
+const unsigned int updateTableT = 500; // Period for table updates
 
 // Constants
 const double M = .25, R = 3.5, TWO_R = R * 2; // Default mass and radius of ball
@@ -223,11 +224,11 @@ class BSystem
         // If time to update, display next row of debug table
         if(iterNum % updateTableT == 0)
         {
-            printf("%d\t%.3f", iterNum, t);
-            printf("\t%.3f\t%.3f", b[debugBall].s[X], b[debugBall].s[Y]);
-            printf("\t%.3f\t%.3f", b[debugBall].v[X], b[debugBall].v[Y]);
-            printf("\t%.3f\t%.3f", b[debugBall].a[X], b[debugBall].a[Y]);
-            printf("\t%.3f\t%.3f", b[debugBall].F[X], b[debugBall].F[Y]);
+            printf("%d\t%.*f", iterNum, dispPrec, t);
+            printf("\t%.*f\t%.*f", dispPrec, b[debugBall].s[X], dispPrec, b[debugBall].s[Y]);
+            printf("\t%.*f\t%.*f", dispPrec, b[debugBall].v[X], dispPrec, b[debugBall].v[Y]);
+            printf("\t%.*f\t%.*f", dispPrec, b[debugBall].a[X], dispPrec, b[debugBall].a[Y]);
+            printf("\t%.*f\t%.*f", dispPrec, b[debugBall].F[X], dispPrec, b[debugBall].F[Y]);
         }
 #endif // DEBUG
 
@@ -302,6 +303,10 @@ public:
         }
         // Run until the balls are moving away from each other or there is a timeout
         while(getContinueState());
+
+        #ifdef DEBUG
+        printf("\n");
+        #endif // DEBUG
     }
 
 
@@ -332,6 +337,19 @@ public:
                 printf("v%d%c\t%.4f\t%.4f\t%.4f\t%.2f\n", ball+1, state[stateIndex],
                        vx, vy, normV, theta);
             }
+
+#ifdef DEBUG
+        // Calculate momentum and energy errors
+        double dpX = b[A].m * vi[A][X] + b[B].m * vi[B][X] - b[A].m * b[A].v[X] - b[B].m * b[B].v[X];
+        double dpY = b[A].m * vi[A][Y] + b[B].m * vi[B][Y] - b[A].m * b[A].v[Y] - b[B].m * b[B].v[Y];
+        double dT = .5 * (b[A].m*norm(vi[A])*norm(vi[A]) + b[B].m*norm(vi[B])*norm(vi[B])
+                          - b[A].m*norm(b[A].v)*norm(b[A].v) - b[B].m*norm(b[B].v)*norm(b[B].v));
+
+        // Display momentum and energy errors
+        printf("Difference in px: %.7f\n", dpX);
+        printf("Difference in py: %.7f\n", dpY);
+        printf("Difference in T: %.7f\n", dT);
+#endif // DEBUG
     }
 
 
