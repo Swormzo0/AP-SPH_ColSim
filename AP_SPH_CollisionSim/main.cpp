@@ -1,14 +1,12 @@
 #include <iostream>
 #include <stdio.h>
-//#include <windows.h>
-//#include <iomanip>
 #include <cmath>
 
 // Program controls
-#define USER_MASS
-#define DEBUG
-//#define DEBUG_POSN
-//#define CUBIC_F
+#define USER_MASS // Allow the user to define mass for each ball?
+#define DEBUG // Provide a debug table with t, s, v, a and F
+//#define DEBUG_POSN // Debug the position from equilibrium
+//#define CUBIC_F // Using the cubic regression? (and not quadratic?)
 
 using namespace std;
 
@@ -16,9 +14,9 @@ using namespace std;
 const bool isStressBall = false; // Whether to use mass and radius of stress ball
 double dt = 0.0000001; // Timestep
 const double stopDist = 0.0001; // Stop when the balls are this far from each other
-const double timeOut = 21;
-const double minTSPerc = .001; // Largest percetnage of radius length permitted for first timestep
-                               // displacement from equilibrium
+const double timeOut = 21; // How long before giving up on simulation
+const double minTSPerc = .001; // Largest percentage of radius length permitted for first timestep
+// displacement from equilibrium
 
 // Debug config
 bool debugBall = 0; // Debug ball A
@@ -28,9 +26,9 @@ const unsigned int updateTableT = 100; // Period for table updates
 const double M = .25, R = 3.5, TWO_R = R * 2; // Default mass and radius of ball
 const double PI = 3.14159265358979323846264338;
 const double F_CUBIC[] = {2534468.26698494, -20795.82059, 2127.93853}; // Coefficients of cubic equation
-const double F_QUAD[] = {48234.5591, 1699.472766}; //// Coefficients of quadratic equation
+const double F_QUAD[] = {48234.5591, 1699.472766}; // Coefficients of quadratic equation
 
-// Convenience variables for coordianates
+// Convenience variables for coordinates
 const int X = 0;
 const int Y = 1;
 
@@ -44,6 +42,14 @@ const int B = 1;
 double norm(double (&a)[2])
 {
     return sqrt(a[0]*a[0]+a[1]*a[1]);
+}
+
+
+// Calculate angle in degrees with the domain [0, 360)
+double angleDeg(double y, double x)
+{
+    double theta = atan2(y, x) * 180 / PI;
+    return theta < 0? theta + 360: theta;
 }
 
 
@@ -123,12 +129,12 @@ public:
 // A class for the system of two balls
 class BSystem
 {
-    Ball b[2];
-    double dist, t=0, vi[2][2];
-    bool hasEverCollided = false;
-    #ifdef DEBUG
-    unsigned int iterNum = 0;
-    #endif // DEBUG
+    Ball b[2]; // Two balls
+    double dist, t=0, vi[2][2]; // Distance, time and initial velocity, respectively
+    bool hasEverCollided = false; // Record: Was there any collision?
+#ifdef DEBUG
+    unsigned int iterNum = 0; // Simulation iteration index
+#endif // DEBUG
 
 
     // Calculate displacement from equilibrium and update distance from each other with respect to the first ball
@@ -139,9 +145,7 @@ class BSystem
 
         // Calculate difference in position
         for(int i=0; i < 2; i++)
-        {
             ds[i] = b[0].s[i] - b[1].s[i];
-        }
 
         // Calculate distance and see if the balls are in collision
         dist = norm(ds);
@@ -159,10 +163,10 @@ class BSystem
             for(int i=0; i < 2; i++)
                 xA[i] = ds[i] * (-.5 + R / dist);
 
-        #if defined(DEBUG) && defined(DEBUG_POSN)
-
+#if defined(DEBUG) && defined(DEBUG_POSN)
         // Calculate x using Igi's formula
         double x = R - .5 * dist;
+
         // If time to update
         if(iterNum % updateTableT == 0)
         {
@@ -171,7 +175,7 @@ class BSystem
             // Display difference in magnitudes of x
             printf("\t%.5f", x-norm(xA));
         }
-        #endif // DEBUG
+#endif // DEBUG
     }
 
 
@@ -192,7 +196,6 @@ class BSystem
             F[i] = -x[i] * (F_QUAD[0]*newX+F_QUAD[1]);
 #endif
         }
-
     }
 
 
@@ -206,7 +209,7 @@ class BSystem
         // Update force on ball A
         ballForce(xA, b[A].F);
 
-        // Equal and opposite force on ball B
+        // Effect equal and opposite force on ball B
         for(int i=0; i < 2; i++)
             b[B].F[i] = -b[A].F[i];
     }
@@ -216,7 +219,7 @@ class BSystem
     void update()
     {
         // Debug stuff
-        #ifdef DEBUG
+#ifdef DEBUG
         // If time to update, display next row of debug table
         if(iterNum % updateTableT == 0)
         {
@@ -226,7 +229,7 @@ class BSystem
             printf("\t%.3f\t%.3f", b[debugBall].a[X], b[debugBall].a[Y]);
             printf("\t%.3f\t%.3f", b[debugBall].F[X], b[debugBall].F[Y]);
         }
-        #endif // DEBUG
+#endif // DEBUG
 
         // Evaluate forces
         updateForces();
@@ -236,13 +239,13 @@ class BSystem
             b[i].updateKM();
 
         // Debug table
-        #ifdef DEBUG
+#ifdef DEBUG
         // End row for debug table when needed
         if(iterNum % updateTableT == 0)
             printf("\n");
         // Increment iteration number
         iterNum++;
-        #endif // DEBUG
+#endif // DEBUG
 
         // Increment time step
         t += dt;
@@ -276,26 +279,19 @@ class BSystem
 
 
 public:
-    // Debug functions
-    void debug()
-    {
-        // Test
-    }
-
-
     // Run simulation
     void run()
     {
-        #ifdef DEBUG
+#ifdef DEBUG
         // Display table debug header for the ball to debug
         printf("b%c\tt\tsx\tsy\tvx\tvy\tax\tay\tFx\tFy", debugBall? 'B': 'A');
-        #ifdef DEBUG_POSN
+#ifdef DEBUG_POSN
         printf("\txAx\txAy\txCheck");
-        #endif // DEBUG_POSN
+#endif // DEBUG_POSN
         printf("\n--------------------------------------------------------------------------------\n");
-        #endif // DEBUG
+#endif // DEBUG
 
-        // Adjust dt if it seems too high
+        // Decrease dt if it seems too high
         double minTSX = R * minTSPerc;
         dt = fmin(fmin(dt, minTSX/norm(b[A].v)), minTSX/norm(b[B].v));
 
@@ -332,7 +328,7 @@ public:
                 vx = dispV[stateIndex][ball][X];
                 vy = dispV[stateIndex][ball][Y];
                 normV = norm(dispV[stateIndex][ball]);
-                theta = atan2(dispV[stateIndex][ball][Y], dispV[stateIndex][ball][X]) * 180 / PI;
+                theta = angleDeg(dispV[stateIndex][ball][Y], dispV[stateIndex][ball][X]);
                 printf("v%d%c\t%.4f\t%.4f\t%.4f\t%.2f\n", ball+1, state[stateIndex],
                        vx, vy, normV, theta);
             }
@@ -347,10 +343,10 @@ public:
         double theta;
         double m[2], v[2][2], s[2][2];
 
-        #ifdef DEBUG
+#ifdef DEBUG
         printf("Debug which ball? ");
         scanf("%d", &debugBall);
-        #endif // DEBUG
+#endif // DEBUG
 
         // Prompt for variables
         cout<<"Mass 1 in kg:";
@@ -366,15 +362,15 @@ public:
         for (int m=0; m<2; m++)
         {
             cin>>v[A][m];
-            cout<<endl;
         }
+        cout<<endl;
 
         cout<<"Components of initial velocity of ball 2 in ms^-1:"<<endl<<endl;
         for (int m=0; m<2; m++)
         {
             cin>>v[B][m];
-            cout<<endl;
         }
+        cout<<endl;
 
         // Calculate positions
         // Set ball 1 at the origin
@@ -393,8 +389,6 @@ public:
         // Create balls
         for(int i=0; i < 2; i++)
             b[i] = Ball(m[i], v[i], s[i]);
-
-// TODO (Sherman#1#): Make sure that dt is low enough
     }
 };
 
