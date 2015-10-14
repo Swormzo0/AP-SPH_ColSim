@@ -8,7 +8,7 @@
 #define DEBUG // Provide a debug table with t, s, v, a and F
 //#define DEBUG_POSN // Debug the position from equilibrium
 //#define DEBUG_PT // Debug output by examining momentum and kinetic energy
-//#define V_TABLE // Display a table of final velocities?
+#define V_TABLE // Display a table of final velocities?
 
 #define CUBIC_F // Using the cubic regression? (and not quadratic?)
 
@@ -16,7 +16,7 @@ using namespace std;
 
 // Configuration
 const bool isStressBall = false; // Whether to use mass and radius of stress ball
-double dt = 1e-8; // Timestep
+double dt = 1e-9; // Timestep
 const double stopDist = 0.0001; // Stop when the balls are this far from each other
 const double timeOut = 21; // How long before giving up on simulation
 const double minTSPerc = .001; // Largest percentage of radius length permitted for first timestep
@@ -25,7 +25,7 @@ const int dispPrec = 15; // How many decimal places to show in debug table
 
 // Debug config
 //bool debugBall = 0; // Debug ball A
-const unsigned int updateTableT = 5e6; // Period for table updates
+const unsigned int updateTableT = 5e5; // Period for table updates
 
 // Constants
 const double M = .25, R = 3.34, TWO_R = R * 2; // Default mass and radius of ball (Mass is dummy value, radius is measured)
@@ -349,7 +349,7 @@ public:
 
         // Display table of velocity data
 #ifdef V_TABLE
-        printf("\tx\ty\tnorm\ttheta\n");
+        printf("\tx\ty\n");
         printf("--------------------------------------\n");
         getDisplayVelocities(dispV);
         for(int stateIndex = 0; stateIndex < 2; stateIndex++)
@@ -357,10 +357,11 @@ public:
             {
                 vx = dispV[stateIndex][ball][X];
                 vy = dispV[stateIndex][ball][Y];
-                normV = norm(dispV[stateIndex][ball]);
-                theta = angleDeg(dispV[stateIndex][ball][Y], dispV[stateIndex][ball][X]);
-                printf("v%d%c\t%.4f\t%.4f\t%.4f\t%.2f\n", ball+1, state[stateIndex],
-                       vx, vy, normV, theta);
+                printf("v%d%c\t%.5f\t%.5f\n", ball+1, state[stateIndex], vx, vy);
+                //normV = norm(dispV[stateIndex][ball]);
+                //theta = angleDeg(dispV[stateIndex][ball][Y], dispV[stateIndex][ball][X]);
+                /*printf("v%d%c\t%.4f\t%.4f\t%.4f\t%.2f\n", ball+1, state[stateIndex],
+                       vx, vy, normV, theta);*/
             }
 #endif // V_TABLE
 
