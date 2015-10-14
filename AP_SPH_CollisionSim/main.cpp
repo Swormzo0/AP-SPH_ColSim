@@ -8,7 +8,7 @@
 #define DEBUG // Provide a debug table with t, s, v, a and F
 //#define DEBUG_POSN // Debug the position from equilibrium
 //#define DEBUG_PT // Debug output by examining momentum and kinetic energy
-#define V_TABLE // Display a table of final velocities?
+//#define V_TABLE // Display a table of final velocities?
 
 #define CUBIC_F // Using the cubic regression? (and not quadratic?)
 
@@ -305,6 +305,8 @@ public:
     {
 #ifdef DEBUG
         // Display table debug header for the ball to debug
+        printf("Table of simulation values:\n");
+        printf("!* All values in mks units.\n\n");
         for(int ball=0; ball < 2; ball++)
             printf("%s\tsx\tsy\tvx\tvy\tax\tay\tFx\tFy\t", ball==1? "bB": "bA\tt");
 #ifdef DEBUG_POSN
@@ -349,7 +351,7 @@ public:
 
         // Display table of velocity data
 #ifdef V_TABLE
-        printf("\tx\ty\n");
+        printf("\tx\ty\tnorm\ttheta\n");
         printf("--------------------------------------\n");
         getDisplayVelocities(dispV);
         for(int stateIndex = 0; stateIndex < 2; stateIndex++)
@@ -357,11 +359,11 @@ public:
             {
                 vx = dispV[stateIndex][ball][X];
                 vy = dispV[stateIndex][ball][Y];
-                printf("v%d%c\t%.5f\t%.5f\n", ball+1, state[stateIndex], vx, vy);
-                //normV = norm(dispV[stateIndex][ball]);
-                //theta = angleDeg(dispV[stateIndex][ball][Y], dispV[stateIndex][ball][X]);
-                /*printf("v%d%c\t%.4f\t%.4f\t%.4f\t%.2f\n", ball+1, state[stateIndex],
-                       vx, vy, normV, theta);*/
+                //printf("v%d%c\t%.5f\t%.5f\n", ball+1, state[stateIndex], vx, vy);
+                normV = norm(dispV[stateIndex][ball]);
+                theta = angleDeg(dispV[stateIndex][ball][Y], dispV[stateIndex][ball][X]);
+                printf("v%d%c\t%.4f\t%.4f\t%.4f\t%.2f\n", ball+1, state[stateIndex],
+                       vx, vy, normV, theta);
             }
 #endif // V_TABLE
 
@@ -389,9 +391,9 @@ public:
         double m[2], v[2][2], s[2][2];
 
         // Prompt for variables
-        cout<<"Mass 1 in kg:";
+        cout<<"Mass 1 in kg: ";
         cin>>m[A];
-        cout<<"Mass 2 in kg:";
+        cout<<"Mass 2 in kg: ";
         cin>>m[B];
 
         cout<<"Angle of ball 2 relative to ball 1 in degrees:"<<endl<<endl;
