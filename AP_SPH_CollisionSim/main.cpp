@@ -4,30 +4,34 @@
 
 // Program controls
 #define USER_MASS // Allow the user to define mass for each ball?
+
 #define DEBUG // Provide a debug table with t, s, v, a and F
 //#define DEBUG_POSN // Debug the position from equilibrium
-//#define CUBIC_F // Using the cubic regression? (and not quadratic?)
+//#define DEBUG_PT // Debug output by examining momentum and kinetic energy
+//#define V_TABLE // Display a table of final velocities?
+
+#define CUBIC_F // Using the cubic regression? (and not quadratic?)
 
 using namespace std;
 
 // Configuration
 const bool isStressBall = false; // Whether to use mass and radius of stress ball
-double dt = 0.0000001; // Timestep
+double dt = 1e-8; // Timestep
 const double stopDist = 0.0001; // Stop when the balls are this far from each other
 const double timeOut = 21; // How long before giving up on simulation
 const double minTSPerc = .001; // Largest percentage of radius length permitted for first timestep
-const double dispPrec = 15; // How many decimal places to show in debug table
+const int dispPrec = 15; // How many decimal places to show in debug table
 // displacement from equilibrium
 
 // Debug config
-bool debugBall = 0; // Debug ball A
-const unsigned int updateTableT = 500; // Period for table updates
+//bool debugBall = 0; // Debug ball A
+const unsigned int updateTableT = 5e6; // Period for table updates
 
 // Constants
-const double M = .25, R = 3.5, TWO_R = R * 2; // Default mass and radius of ball
+const double M = .25, R = 3.34, TWO_R = R * 2; // Default mass and radius of ball (Mass is dummy value, radius is measured)
 const double PI = 3.14159265358979323846264338;
-const double F_CUBIC[] = {2534468.26698494, -20795.82059, 2127.93853}; // Coefficients of cubic equation
-const double F_QUAD[] = {48234.5591, 1699.472766}; // Coefficients of quadratic equation
+const double F_CUBIC[] = {1853422.074, -2513.035528, 2018.532254}; // Coefficients of cubic equation
+const double F_QUAD[] = {44852.95941, 1757.305338}; // Coefficients of quadratic equation
 
 // Convenience variables for coordinates
 const int X = 0;
@@ -91,6 +95,7 @@ public:
             v[i] = v[i] + a[i]*dt;
     }
 
+
     // Constructors
     // Default Constructor
     Ball()
@@ -105,6 +110,7 @@ public:
             F[i] = 0;
         }
     }
+
 
     // Construct a ball in a given circumstance
     Ball(double m, double (&v)[2], double (&s)[2])
@@ -172,7 +178,7 @@ class BSystem
         if(iterNum % updateTableT == 0)
         {
             // Display the displacement from equilibrium wrt ball 1
-            printf("\t%.5f\t%.5f", xA[X], xA[Y]);
+            printf("%.5f\t%.5f", xA[X], xA[Y]);
             // Display difference in magnitudes of x
             printf("\t%.5f", x-norm(xA));
         }
@@ -183,18 +189,18 @@ class BSystem
     // Calculate the force for a given distance from equilibrium
     void ballForce(double (&x)[2], double (&F)[2])
     {
-        double newX;
+        // The regressed force requires the magnitude
+        double normX = norm(x);
 
         for(int i=0; i < 2; i++)
         {
-            // The regressed force requires a negative x
-            newX = -abs(x[i]);
-
-            // Negate force as to oppose direction of displacement
+            // Applied force felt on ball is positive
+            // Use component as a factor because it is the product of the
+            // magnitude and cos/sin theta
 #ifdef CUBIC_F
-            F[i] = -x[i] * (newX*(F_CUBIC[0]*newX+F_CUBIC[1])+F_CUBIC[2]);
+            F[i] = x[i] * ((F_CUBIC[0]*normX+F_CUBIC[1])*normX+F_CUBIC[2]);
 #else
-            F[i] = -x[i] * (F_QUAD[0]*newX+F_QUAD[1]);
+            F[i] = x[i] * (F_QUAD[0]*normX+F_QUAD[1]);
 #endif
         }
     }
@@ -216,6 +222,24 @@ class BSystem
     }
 
 
+    // Display the next row of the debug table
+    void dispDebugRow()
+    {
+        // Display iteration index and time
+        printf("%d", iterNum);
+        printf("\t%.*f", dispPrec, t);
+
+        // Display s, v, a and F of each ball
+        for(int i=0; i < 2; i++)
+        {
+            printf("\t%.*f\t%.*f", dispPrec, b[i].s[X], dispPrec, b[i].s[Y]);
+            printf("\t%.*f\t%.*f", dispPrec, b[i].v[X], dispPrec, b[i].v[Y]);
+            printf("\t%.*f\t%.*f", dispPrec, b[i].a[X], dispPrec, b[i].a[Y]);
+            printf("\t%.*f\t%.*f\t", dispPrec, b[i].F[X], dispPrec, b[i].F[Y]);
+        }
+    }
+
+
     // Update the state and increment time step
     void update()
     {
@@ -224,11 +248,7 @@ class BSystem
         // If time to update, display next row of debug table
         if(iterNum % updateTableT == 0)
         {
-            printf("%d\t%.*f", iterNum, dispPrec, t);
-            printf("\t%.*f\t%.*f", dispPrec, b[debugBall].s[X], dispPrec, b[debugBall].s[Y]);
-            printf("\t%.*f\t%.*f", dispPrec, b[debugBall].v[X], dispPrec, b[debugBall].v[Y]);
-            printf("\t%.*f\t%.*f", dispPrec, b[debugBall].a[X], dispPrec, b[debugBall].a[Y]);
-            printf("\t%.*f\t%.*f", dispPrec, b[debugBall].F[X], dispPrec, b[debugBall].F[Y]);
+            dispDebugRow();
         }
 #endif // DEBUG
 
@@ -285,11 +305,13 @@ public:
     {
 #ifdef DEBUG
         // Display table debug header for the ball to debug
-        printf("b%c\tt\tsx\tsy\tvx\tvy\tax\tay\tFx\tFy", debugBall? 'B': 'A');
+        for(int ball=0; ball < 2; ball++)
+            printf("%s\tsx\tsy\tvx\tvy\tax\tay\tFx\tFy\t", ball==1? "bB": "bA\tt");
 #ifdef DEBUG_POSN
         printf("\txAx\txAy\txCheck");
 #endif // DEBUG_POSN
-        printf("\n--------------------------------------------------------------------------------\n");
+        printf("\n--------------------------------------------------------------------------------");
+        printf("--------------------------------------------------------------------------------\n");
 #endif // DEBUG
 
         // Decrease dt if it seems too high
@@ -305,7 +327,9 @@ public:
         while(getContinueState());
 
         #ifdef DEBUG
-        printf("\n");
+        // Display the final state of the program in the table
+        dispDebugRow();
+        printf("\n\n");
         #endif // DEBUG
     }
 
@@ -324,6 +348,7 @@ public:
             printf("Simulation timed out.\n\n");
 
         // Display table of velocity data
+#ifdef V_TABLE
         printf("\tx\ty\tnorm\ttheta\n");
         printf("--------------------------------------\n");
         getDisplayVelocities(dispV);
@@ -337,8 +362,9 @@ public:
                 printf("v%d%c\t%.4f\t%.4f\t%.4f\t%.2f\n", ball+1, state[stateIndex],
                        vx, vy, normV, theta);
             }
+#endif // V_TABLE
 
-#ifdef DEBUG
+#ifdef DEBUG_PT
         // Calculate momentum and energy errors
         double dpX = b[A].m * vi[A][X] + b[B].m * vi[B][X] - b[A].m * b[A].v[X] - b[B].m * b[B].v[X];
         double dpY = b[A].m * vi[A][Y] + b[B].m * vi[B][Y] - b[A].m * b[A].v[Y] - b[B].m * b[B].v[Y];
@@ -349,7 +375,7 @@ public:
         printf("Difference in px: %.7f\n", dpX);
         printf("Difference in py: %.7f\n", dpY);
         printf("Difference in T: %.7f\n", dT);
-#endif // DEBUG
+#endif // DEBUG_PT
     }
 
 
@@ -360,11 +386,6 @@ public:
         // Must be in (-90, 90)in degrees
         double theta;
         double m[2], v[2][2], s[2][2];
-
-#ifdef DEBUG
-        printf("Debug which ball? ");
-        scanf("%d", &debugBall);
-#endif // DEBUG
 
         // Prompt for variables
         cout<<"Mass 1 in kg:";
